@@ -1,30 +1,31 @@
+# app.py
+
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="TikTok Follower Analyzer", layout="centered")
+st.title("TikTok Follower Analyzer")
 
-st.title("📊 TikTok Follower Analyzer")
-st.markdown("Upload your **Followers.csv** and **Following.csv** files from TikTok data download.")
+st.markdown("### Enter your TikTok handle:")
+username = st.text_input("TikTok username")
 
-followers_file = st.file_uploader("Upload followers CSV", type=["csv"])
-following_file = st.file_uploader("Upload following CSV", type=["csv"])
+if username:
+    st.success(f"Welcome, @{username}!")
 
-if followers_file and following_file:
-    followers_df = pd.read_csv(followers_file)
-    following_df = pd.read_csv(following_file)
+    st.markdown("### Paste your following list (one username per line):")
+    following_raw = st.text_area("Your Following", height=200)
+    
+    st.markdown("### Paste your followers list (one username per line):")
+    followers_raw = st.text_area("Your Followers", height=200)
 
-    try:
-        followers_set = set(followers_df['Username'].str.lower())
-        following_set = set(following_df['Username'].str.lower())
+    if st.button("Analyze"):
+        following = set(following_raw.strip().splitlines())
+        followers = set(followers_raw.strip().splitlines())
 
-        not_following_back = following_set - followers_set
-        not_followed_by_you = followers_set - following_set
+        not_following_back = following - followers
+        not_followed_by_you = followers - following
 
-        st.subheader("🚫 You follow them, but they don’t follow back")
-        st.write(sorted(not_following_back))
+        st.subheader("You follow them, but they don't follow you back:")
+        st.write(not_following_back or "🎉 None!")
 
-        st.subheader("💡 They follow you, but you don’t follow back")
-        st.write(sorted(not_followed_by_you))
-
-    except Exception as e:
-        st.error(f"Something went wrong: {e}")
+        st.subheader("They follow you, but you're not following back:")
+        st.write(not_followed_by_you or "🎉 None!")
