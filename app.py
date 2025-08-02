@@ -37,27 +37,36 @@ Once your ZIP file is ready, upload it below:
 
 uploaded_zip = st.file_uploader("Upload your TikTok data (.zip)", type="zip")
 
-def parse_line(line):
-    """Extract datetime and username from a line like:
-       Date: 2025-08-02 01:00:44 UTCUsername: abdulllahi.salisu
-    """
-    match = re.search(r"Date:\s*(.*?)\s*UTCUsername:\s*(\S+)", line)
-    if match:
-        date_str, username = match.groups()
-        try:
-            date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-        except:
-            date = None
-        return username, date
-    return None, None
-
 def load_user_data(file_path):
+    """
+    Parse TikTok follower/following file with two-line format:
+    Date: YYYY-MM-DD HH:MM:SS UTC
+    Username: username_here
+    """
     data = []
     with open(file_path, "r", encoding="utf-8") as f:
-        for line in f:
-            username, date = parse_line(line.strip())
-            if username:
-                data.append({"username": username, "date": date})
+        lines = [line.strip() for line in f if line.strip()]  # skip empty lines
+
+    for i in range(0, len(lines), 2):
+        if i+1 >= len(lines):
+            break  # no username line for last date line
+        
+        date_line = lines[i]
+        user_line = lines[i+1]
+
+        date_match = re.match(r"Date:\s*(.*) UTC", date_line)
+        username_match = re.match(r"Username:\s*(.*)", user_line)
+
+        if date_match and username_match:
+            date_str = date_match.group(1)
+            username = username_match.group(1)
+            try:
+                date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+            except:
+                date = None
+
+            data.append({"username": username, "date": date})
+
     return pd.DataFrame(data)
 
 if uploaded_zip:
@@ -74,7 +83,6 @@ if uploaded_zip:
         extracted_files = os.listdir(tmp_dir)
         st.write("Extracted files:", extracted_files)
 
-        # Load followers and following data
         followers_df = pd.DataFrame()
         following_df = pd.DataFrame()
 
@@ -93,74 +101,57 @@ if uploaded_zip:
             st.write(f"Total Followers: {len(followers_df)}")
             st.write(f"Total Following: {len(following_df)}")
 
-            # Sets for quick comparison
             followers_set = set(followers_df['username'])
             following_set = set(following_df['username'])
 
-            # Non-followbacks: you follow them, but they don't follow you
+            # People you follow who don't follow you back
             non_followbacks = following_set - followers_set
 
-            # Fans only: they follow you, but you don't follow back
+            # People who follow you but you don't follow back
             fans_only = followers_set - following_set
 
-            # Follow-then-unfollow detection:
-            # Users who followed you at some point (in followers_df)
-            # but are no longer following you (not in followers_set now)
-            # For this, assume your current followers are in followers_set.
-            # To detect unfollowers, check users in following_df and followers_df timestamps,
-            # or if you have historical follower files. Here we infer from data:
+            # Estimate unfollowers:
+            # Those who are in following list but not in followers list
+            unfollowers = following_set - followers_set
 
-            # Let's identify users who previously followed you (followers_df) but are missing now
-            # Since we only have current data, this is tricky. 
-            # But if followers_df includes historical dates (if you have older export),
-            # we could compare.
+            # Gather unfollower details with dates from following_df
+            unfollowers_data = []
+            for user in unfollowers:
+                user_rows = following_df[following_df['username'] == user]
+                if not user_rows.empty:
+                    followed_on = user_rows.iloc[0]['date']
+                else:
+                    followed_on = None
+                unfollowers_data.append({
+                    "username": user,
+                    "followed_on": followed_on,
+                    "unfollowed_on": "Unknown"
+                })
+            unfollowers_df = pd.DataFrame(unfollowers_data)
 
-            # For now, let's find users who followed you previously (appear in followers_df),
-            # but not in current followers_set (assumed to be current followers_df usernames)
-            # So if you upload old and new data, you'd compare.
-
-            # Here we simulate this by assuming followers_df = historical followers,
-            # and current followers are a separate upload (which you may add later).
-
-            # For demo: treat all users in following_df not in followers_set as unfollowed you (simplified)
-            unfollowers = set()
-            unfollowers_dates = []
-
-            # Find users who followed you before but not anymore
-            # (For demonstration, those who are in following_df but not followers_set)
-            for user in following_df['username']:
-                if user not in followers_set:
-                    # Find when they started following (date in following_df)
-                    date_followed = following_df.loc[following_df['username'] == user, 'date'].iloc[0]
-                    # Use None for unfollow date (since unknown)
-                    unfollowers.add(user)
-                    unfollowers_dates.append({"username": user, "followed_on": date_followed, "unfollowed_on": None})
-
-            unfollowers_df = pd.DataFrame(unfollowers_dates)
-
+            # Display non-followbacks with clickable links
             st.subheader("➡️ People You Follow Who Don't Follow You Back")
             for user in sorted(non_followbacks):
                 url = f"https://www.tiktok.com/search?q={user}"
                 st.markdown(f"[{user}]({url})", unsafe_allow_html=True)
 
+            # Display fans only with clickable links
             st.subheader("🫂 People Who Follow You But You Don't Follow Back")
             for user in sorted(fans_only):
                 url = f"https://www.tiktok.com/search?q={user}"
                 st.markdown(f"[{user}]({url})", unsafe_allow_html=True)
 
+            # Display estimated unfollowers
             st.subheader("❌ People Who Unfollowed You After Following")
             if not unfollowers_df.empty:
                 for _, row in unfollowers_df.iterrows():
                     url = f"https://www.tiktok.com/search?q={row['username']}"
                     followed_str = row['followed_on'].strftime("%Y-%m-%d %H:%M") if pd.notnull(row['followed_on']) else "Unknown"
-                    unfollowed_str = "Unknown"
-                    st.markdown(f"- [{row['username']}]({url}) — Followed: {followed_str}, Unfollowed: {unfollowed_str}")
+                    st.markdown(f"- [{row['username']}]({url}) — Followed: {followed_str}, Unfollowed: {row['unfollowed_on']}")
             else:
                 st.write("No unfollowers detected.")
 
-            # BONUS: Plotting follow/unfollow counts
-            import matplotlib.pyplot as plt
-
+            # Plot overview chart
             counts = {
                 "Followers": len(followers_set),
                 "Following": len(following_set),
@@ -175,17 +166,26 @@ if uploaded_zip:
             ax.set_title("TikTok Followers/Following Overview")
             st.pyplot(fig)
 
-            # Download CSV export
-            st.subheader("⬇️ Download your analysis data")
-
-            def to_clickable_link(user):
-                return f"https://www.tiktok.com/search?q={user}"
+            # Prepare CSV export with categories
+            combined_users = list(followers_set.union(following_set))
+            categories = []
+            for u in combined_users:
+                if u in followers_set and u in following_set:
+                    categories.append("Mutual")
+                elif u in followers_set:
+                    categories.append("Follower Only")
+                else:
+                    categories.append("Following Only")
 
             csv_df = pd.DataFrame({
-                "Username": list(following_set.union(followers_set)),
-                "Type": ["Both" if u in (followers_set & following_set) else
-                         "Follower Only" if u in followers_set else
-                         "Following Only" for u in (following_set.union(followers_set))],
+                "Username": combined_users,
+                "Category": categories
             })
 
-            st.download_button("Download User List CSV", csv_df.to_csv(index=False).encode('utf-8'), "tiktok_users.csv", "text/csv")
+            st.subheader("⬇️ Download your analysis data")
+            st.download_button(
+                "Download User List CSV",
+                csv_df.to_csv(index=False).encode('utf-8'),
+                "tiktok_users.csv",
+                "text/csv"
+            )
