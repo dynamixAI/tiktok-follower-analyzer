@@ -104,60 +104,33 @@ if uploaded_zip:
             followers_set = set(followers_df['username'])
             following_set = set(following_df['username'])
 
-            # People you follow who don't follow you back
             non_followbacks = following_set - followers_set
-
-            # People who follow you but you don't follow back
             fans_only = followers_set - following_set
+            mutuals = followers_set & following_set
 
-            # Estimate unfollowers:
-            # Those who are in following list but not in followers list
-            unfollowers = following_set - followers_set
-
-            # Gather unfollower details with dates from following_df
-            unfollowers_data = []
-            for user in unfollowers:
-                user_rows = following_df[following_df['username'] == user]
-                if not user_rows.empty:
-                    followed_on = user_rows.iloc[0]['date']
-                else:
-                    followed_on = None
-                unfollowers_data.append({
-                    "username": user,
-                    "followed_on": followed_on,
-                    "unfollowed_on": "Unknown"
-                })
-            unfollowers_df = pd.DataFrame(unfollowers_data)
-
-            # Display non-followbacks with clickable links
+            # Display Non-Followbacks
             st.subheader("➡️ People You Follow Who Don't Follow You Back")
             for user in sorted(non_followbacks):
-                url = f"https://www.tiktok.com/search?q={user}"
+                url = f"https://www.tiktok.com/@{user}"
                 st.markdown(f"[{user}]({url})", unsafe_allow_html=True)
 
-            # Display fans only with clickable links
+            # Display Fans Only
             st.subheader("🫂 People Who Follow You But You Don't Follow Back")
             for user in sorted(fans_only):
-                url = f"https://www.tiktok.com/search?q={user}"
+                url = f"https://www.tiktok.com/@{user}"
                 st.markdown(f"[{user}]({url})", unsafe_allow_html=True)
 
-            # Display estimated unfollowers
-            st.subheader("❌ People Who Unfollowed You After Following")
-            if not unfollowers_df.empty:
-                for _, row in unfollowers_df.iterrows():
-                    url = f"https://www.tiktok.com/search?q={row['username']}"
-                    followed_str = row['followed_on'].strftime("%Y-%m-%d %H:%M") if pd.notnull(row['followed_on']) else "Unknown"
-                    st.markdown(f"- [{row['username']}]({url}) — Followed: {followed_str}, Unfollowed: {row['unfollowed_on']}")
-            else:
-                st.write("No unfollowers detected.")
+            # Display Mutual Followers Count
+            st.subheader("🤝 Mutual Followers")
+            st.write(f"Total mutual followers: {len(mutuals)}")
 
-            # Plot overview chart
+            # Plot summary chart
             counts = {
                 "Followers": len(followers_set),
                 "Following": len(following_set),
                 "Non-Followbacks": len(non_followbacks),
                 "Fans Only": len(fans_only),
-                "Unfollowers (estimated)": len(unfollowers)
+                "Mutual Followers": len(mutuals),
             }
 
             fig, ax = plt.subplots()
@@ -166,11 +139,11 @@ if uploaded_zip:
             ax.set_title("TikTok Followers/Following Overview")
             st.pyplot(fig)
 
-            # Prepare CSV export with categories
+            # CSV export with categories
             combined_users = list(followers_set.union(following_set))
             categories = []
             for u in combined_users:
-                if u in followers_set and u in following_set:
+                if u in mutuals:
                     categories.append("Mutual")
                 elif u in followers_set:
                     categories.append("Follower Only")
